@@ -233,12 +233,14 @@ load_sprites:
   CPX #$10    ; decimal 16
   BNE load_sprites
 
+  ; set player location
   LDA #190
   STA player_y
 
   LDA #120
   STA player_x
 
+  ; set ball tile
   LDX #0
 load_ball:
   LDA ball_data, X
@@ -247,6 +249,7 @@ load_ball:
   CPX #$04
   BNE load_ball
 
+  ; set ball location and velocity
   LDA #128
   STA ball_x
   LDA #100
