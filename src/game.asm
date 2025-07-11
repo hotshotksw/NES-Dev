@@ -357,34 +357,42 @@ NOT_HITRIGHT:
     BEQ not_left
       LDA player_x
       ;DEX
-      SEC
-      SBC #$02
-      STA player_x
+      CMP #0
+      BEQ not_left
+        SEC
+        SBC #$02
+        STA player_x
 not_left:
     LDA controller_1
     AND #PAD_R
     BEQ not_right
       LDA player_x
-      CLC
-      ADC #$02
-      STA player_x
-  not_right:
+      CMP #240
+      BEQ not_right
+        CLC
+        ADC #$02
+        STA player_x
+not_right:
     LDA controller_1
     AND #PAD_U
     BEQ not_up
       LDA player_y
-      SEC
-      SBC #$02
-      STA player_y
-  not_up:
+      CMP #0
+      BEQ not_up
+        SEC
+        SBC #$02
+        STA player_y
+not_up:
     LDA controller_1
     AND #PAD_D
     BEQ not_down
       LDA player_y
-      CLC
-      ADC #$02
-      STA player_y
-  not_down:
+      CMP #210
+      BEQ not_down
+        CLC
+        ADC #$02
+        STA player_y
+not_down:
     RTS                       ; Return to caller
 .endproc
 
