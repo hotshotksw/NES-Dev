@@ -1,14 +1,13 @@
 Modules list:
 -------------
-rnd.o:
-    CODE              Offs=000000  Size=0000C2  Align=00001  Fill=0000
-    RODATA            Offs=000000  Size=000C20  Align=00001  Fill=0000
-    ZEROPAGE          Offs=000000  Size=000023  Align=00001  Fill=0000
+pong.o:
+    CODE              Offs=000000  Size=0002D9  Align=00001  Fill=0000
+    RODATA            Offs=000000  Size=000450  Align=00001  Fill=0000
+    ZEROPAGE          Offs=000000  Size=00003B  Align=00001  Fill=0000
     HEADER            Offs=000000  Size=000008  Align=00001  Fill=0000
     VECTORS           Offs=000000  Size=000006  Align=00001  Fill=0000
     OAM               Offs=000000  Size=000100  Align=00001  Fill=0000
     CHARS             Offs=000000  Size=002000  Align=00001  Fill=0000
-    STARTUP           Offs=000000  Size=000038  Align=00001  Fill=0000
 
 
 Segment list:
@@ -17,11 +16,10 @@ Name                   Start     End    Size  Align
 ----------------------------------------------------
 CHARS                 000000  001FFF  002000  00001
 HEADER                000000  000007  000008  00001
-ZEROPAGE              000000  000022  000023  00001
+ZEROPAGE              000000  00003A  00003B  00001
 OAM                   000200  0002FF  000100  00001
-STARTUP               008000  008037  000038  00001
-CODE                  008038  0080F9  0000C2  00001
-RODATA                0080FA  008D19  000C20  00001
+CODE                  008000  0082D8  0002D9  00001
+RODATA                0082D9  008728  000450  00001
 VECTORS               00FFFA  00FFFF  000006  00001
 
 
