@@ -9,7 +9,7 @@
 .byte 'N', 'E', 'S', $1a      ; "NES" followed by MS-DOS EOF marker
 .byte $02                     ; 2 x 16KB PRG-ROM banks
 .byte $01                     ; 1 x 8KB CHR-ROM bank
-.byte $00, $00                ; Mapper 0, no special features
+.byte $01, $00                ; Mapper 0, no special features
 
 ;*****************************************************************
 ; Define NES interrupt vectors
@@ -27,17 +27,15 @@
 ; Use this for variables accessed frequently (like gamepad, game variables, pointers)
 .segment "ZEROPAGE"
 ; Zero Page Memory Map
-; $00-$0F: General purpose variables and pointers
-temp_var:               .res 1    ; General purpose temp variable
-temp_var2:              .res 1    ; Second temp variable
 temp_ptr_low:           .res 1    ; 16-bit pointer (2 bytes)
 temp_ptr_high:          .res 1    ; 16-bit pointer (2 bytes)
+source_ptr_low:         .res 1    ; 16-bit pointer (2 bytes)
+source_ptr_high:        .res 1    ; 16-bit pointer (2 bytes)
 random_num:             .res 1    ; Random number generator value
 
 ; Reserve remaining space in this section if needed
-                        .res 11   ; Pad to $10 (optional - depends on your needs)
+                        .res 11
 
-; $10-$1F: Controller input
 controller_1:           .res 1    ; Current frame controller 1 state
 controller_2:           .res 1    ; Current frame controller 2 state
 controller_1_prev:      .res 1    ; Previous frame state for edge detection
@@ -46,11 +44,15 @@ controller_1_pressed:   .res 1    ; Check if pressed
 controller_1_released:  .res 1    ; Check if released
 
 ; Reserve remaining space in this section if needed
-                        .res 10   ; Pad to $20 (optional)
+                        .res 10
 
 scroll:                 .res 1    ; Scroll screen
 time:                   .res 1    ; Time (60hz = 60 FPS)
 seconds:                .res 1    ; Seconds
+current_nametable:      .res 1   ; current nametable
+current_column:         .res 1
+column_low:             .res 1
+column_high:            .res 1
 
 .segment "OAM"
 oam: .res 256
@@ -68,28 +70,53 @@ oam: .res 256
 
 ; Non-Maskable Interrupt Handler - called during VBlank
 .proc nmi_handler
-  ; send register values to stack
-  PHA
-  TXA
-  PHA
-  TYA
-  PHA
 
-  INC time  ; increment time by 1
-  LDA time  ; load time into accumulator
-  CMP #60   ; check if time is 60
-  BNE skip  ; if not 60, skip
-    INC seconds ; increment seconds by 1
-    LDA #0      ; reset time to 0
-    STA time
-  skip:
+  INC scroll
+nametable_swap_check:
+  LDA scroll
+  BNE nametable_swap_check_done
 
-  ; restore registers
-  PLA
-  TAY
-  PLA
-  TAX
-  PLA
+nametable_swap:
+  LDA current_nametable
+  EOR #$01
+  STA current_nametable
+
+nametable_swap_check_done:
+
+new_column_check:
+  LDA scroll
+  AND #%00000111
+  BNE new_column_check_done
+  JSR draw_new_column
+
+  LDA current_column
+  CLC
+  ADC #$01
+  AND #%01111111
+  STA current_column
+new_column_check_done:
+
+  LDA #$00
+  STA PPU_SPRRAM_ADDRESS
+  LDA #$02
+  STA SPRITE_DMA
+
+  LDA #$00
+  STA $2006        ; clean up PPU address registers
+  STA $2006
+
+  LDA scroll
+  STA PPU_SCROLL                         ; Write horizontal scroll
+  LDA #$00
+  STA PPU_SCROLL                         ; Write vertical scroll
+
+  ;;This is the PPU clean up section, so rendering the next frame starts properly.
+  LDA #%10010000   ; enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
+  ORA current_nametable
+  STA $2000
+
+  LDA #%00011110   ; enable sprites, enable background, no clipping on left side
+  STA $2001
 
   RTI                     ; Return from interrupt (not using NMI yet)
 .endproc
@@ -139,51 +166,129 @@ oam: .res 256
   ; Set PPU address to start of nametable ($2000)
   vram_set_address NAME_TABLE_0_ADDRESS
 
-  ; Set up 16-bit pointer to nametable_data
-  LDA #<nametable_data + 0               ; Add pushes location loaded from nametable
-  STA temp_ptr_low                       ; Store low byte of address
-  LDA #>nametable_data
-  STA temp_ptr_high                      ; Store high byte
-
-  ; If your source data has rows wider than 32 tiles, define the actual width here
-  ; For example, if your rows are 64 tiles wide, change this constant
-  SOURCE_ROW_WIDTH = 96                  ; Adjust this to your actual row width
-
-  ; Load 30 rows of 32 tiles each
-  LDX #30                                ; 30 rows to process
-
-load_row_wide:
-  LDY #$00                               ; Start at beginning of row
-
-load_tile_in_row_wide:
-  LDA (temp_ptr_low),Y                   ; Load tile from current row
-  STA PPU_VRAM_IO                        ; Write to PPU VRAM ($2007)
-  INY
-  CPY #32                                ; Have we loaded 32 tiles (full NES row)?
-  BNE load_tile_in_row_wide              ; Continue loading tiles in this row
-
-  ; Move to next row in source data (skip remaining tiles in wide row)
-  CLC
-  LDA temp_ptr_low
-  ADC #SOURCE_ROW_WIDTH                  ; Add full row width to skip to next row
-  STA temp_ptr_low                       ; Store new low byte
-  LDA temp_ptr_high
-  ADC #0                                 ; Add carry to high byte
-  STA temp_ptr_high                      ; Store new high byte
-
-  DEX                                    ; One less row to process
-  BNE load_row_wide                      ; Continue until all 30 rows done
-
-  ; Reset PPU address latch by reading PPU_STATUS
-  LDA PPU_STATUS                         ; This resets the address latch
-
-  ; Reset scroll registers to 0,0 (important after VRAM writes)
+fill_nametables:
+  LDA #$01
+  STA current_nametable
   LDA #$00
-  STA PPU_SCROLL                         ; Write horizontal scroll = 0
-  STA PPU_SCROLL                         ; Write vertical scroll = 0
+  STA scroll
+  STA current_column
+
+fill_nametables_loop:
+  JSR draw_new_column
+  LDA scroll
+  CLC
+  ADC #$08
+  STA scroll
+  INC current_column
+  LDA current_column
+  CMP #$20
+  BNE fill_nametables_loop
+
+  LDA #$00
+  STA current_nametable
+  LDA #$00
+  STA scroll
+  JSR draw_new_column
+  INC current_column
+
+  LDA #$00
+  STA PPU_CONTROL
+fill_nametables_done:
+
+fill_attribute_0:
+  LDA PPU_STATUS
+  LDA #$23
+  STA PPU_ADDRESS
+  LDA #$C0
+  STA PPU_ADDRESS
+  LDX #$40
+  LDA #$00
+
+fill_attribute_0_loop:
+  STA PPU_VRAM_IO
+  DEX
+  BNE fill_attribute_0_loop
+
+fill_attribute_1:
+  LDA PPU_STATUS
+  LDA #$27
+  STA $2006
+  LDA #$C0
+  STA $2006
+  LDX #$40
+  LDA #$FF
+
+fill_attribute_1_loop:
+  STA PPU_VRAM_IO
+  DEX
+  BNE fill_attribute_1_loop
+
+  LDA #%10010000   ; enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
+  STA $2000
+
+  LDA #%00011110   ; enable sprites, enable background, no clipping on left side
+  STA $2001
 
   RTS                                    ; Done
 
+.endproc
+
+.proc draw_new_column
+  LDA scroll
+  LSR A
+  LSR A
+  LSR A
+  STA column_low    ; $00 to $1F, screen is 32 tiles wide
+
+  LDA current_nametable
+  EOR #$01
+  ASL A
+  ASL A
+  CLC
+  ADC #$20
+  STA column_high
+
+  LDA current_column
+  ASL A
+  ASL A
+  ASL A
+  ASL A
+  ASL A
+  STA source_ptr_low
+  LDA current_column
+  AND #%11111000
+  LSR A
+  LSR A
+  LSR A
+  STA source_ptr_high
+
+  LDA source_ptr_low
+  CLC
+  ADC #<(nametable_data)  ; low byte
+  STA source_ptr_low
+  LDA source_ptr_high
+  ADC #>(nametable_data)  ; high byte
+  STA source_ptr_high
+
+draw_column:
+  LDA #%00000100        ; set to increment +32 mode
+  STA PPU_CONTROL
+
+  LDA PPU_STATUS
+  LDA column_high
+  STA PPU_ADDRESS
+  LDA column_low
+  STA PPU_ADDRESS
+  LDX #$1E
+  LDY #$00
+draw_column_loop:
+  LDA (source_ptr_low), Y
+  STA PPU_VRAM_IO
+  INY
+  DEX
+  BNE draw_column_loop
+
+  RTS
 .endproc
 
 .proc init_sprites
@@ -192,40 +297,6 @@ load_tile_in_row_wide:
 .endproc
 
 .proc update_background
-; Set up 16-bit pointer to nametable_data
-  LDA #<nametable_data + 0               ; Add pushes location loaded from nametable
-  STA temp_ptr_low                       ; Store low byte of address
-  LDA #>nametable_data
-  STA temp_ptr_high                      ; Store high byte
-
-  ; If your source data has rows wider than 32 tiles, define the actual width here
-  ; For example, if your rows are 64 tiles wide, change this constant
-  SOURCE_ROW_WIDTH = 96                  ; Adjust this to your actual row width
-
-  ; Load 30 rows of 32 tiles each
-  LDX #30                                ; 30 rows to process
-
-load_row_wide:
-  LDY #$00                               ; Start at beginning of row
-
-load_tile_in_row_wide:
-  LDA (temp_ptr_low),Y                   ; Load tile from current row
-  STA PPU_VRAM_IO                        ; Write to PPU VRAM ($2007)
-  INY
-  CPY #32                                ; Have we loaded 32 tiles (full NES row)?
-  BNE load_tile_in_row_wide              ; Continue loading tiles in this row
-
-  ; Move to next row in source data (skip remaining tiles in wide row)
-  CLC
-  LDA temp_ptr_low
-  ADC #SOURCE_ROW_WIDTH                  ; Add full row width to skip to next row
-  STA temp_ptr_low                       ; Store new low byte
-  LDA temp_ptr_high
-  ADC #0                                 ; Add carry to high byte
-  STA temp_ptr_high                      ; Store new high byte
-
-  DEX                                    ; One less row to process
-  BNE load_row_wide                      ; Continue until all 30 rows done
   RTS
 .endproc
 
@@ -246,6 +317,7 @@ load_tile_in_row_wide:
     ; seed the random number
     LDA #$45
     STA random_num
+
     ;--------------------------------------------------------------------------
     ; Configure PPU Control Register ($2000)
     ; - Enable NMI on VBlank (bit 7 = 1)
