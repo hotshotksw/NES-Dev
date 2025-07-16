@@ -1,8 +1,8 @@
 Modules list:
 -------------
 rnd.o:
-    CODE              Offs=000000  Size=0000E8  Align=00001  Fill=0000
-    RODATA            Offs=000000  Size=000C20  Align=00001  Fill=0000
+    CODE              Offs=000000  Size=0000F1  Align=00001  Fill=0000
+    RODATA            Offs=000000  Size=000C24  Align=00001  Fill=0000
     ZEROPAGE          Offs=000000  Size=000023  Align=00001  Fill=0000
     HEADER            Offs=000000  Size=000008  Align=00001  Fill=0000
     VECTORS           Offs=000000  Size=000006  Align=00001  Fill=0000
@@ -20,8 +20,8 @@ HEADER                000000  000007  000008  00001
 ZEROPAGE              000000  000022  000023  00001
 OAM                   000200  0002FF  000100  00001
 STARTUP               008000  008037  000038  00001
-CODE                  008038  00811F  0000E8  00001
-RODATA                008120  008D3F  000C20  00001
+CODE                  008038  008128  0000F1  00001
+RODATA                008129  008D4C  000C24  00001
 VECTORS               00FFFA  00FFFF  000006  00001
 
 
